@@ -1,0 +1,219 @@
+Código para Filtrar Vagas
+
+import requests
+import json
+import pandas as pd
+import time
+import random
+import re
+
+# --- 1. CONFIGURAÇÕES CHAVE DO PROJETO ASCENDE (EXPANSÃO NACIONAL) ---
+
+# A lista de UFs e Códigos IBGE de Municípios (Capitais) é a sua lista de busca.
+CODIGOS_MUNICIPIOS_CAPITAIS = {
+    'RO': '1100205',  # Rondônia (Porto Velho)
+    'AC': '1200401',  # Acre (Rio Branco)
+    'AM': '1302603',  # Amazonas (Manaus)
+    'RR': '1400100',  # Roraima (Boa Vista)
+    'PA': '1501402',  # Pará (Belém)
+    'AP': '1600305',  # Amapá (Macapá)
+    'TO': '1721000',  # Tocantins (Palmas)
+    'MA': '2111300',  # Maranhão (São Luís)
+    'PI': '2211001',  # Piauí (Teresina)
+    'CE': '2304400',  # Ceará (Fortaleza)
+    'RN': '2408102',  # Rio Grande do Norte (Natal)
+    'PB': '2507708',  # Paraíba (João Pessoa)
+    'PE': '2606800',  # Pernambuco (Recife)
+    'AL': '2704302',  # Alagoas (Maceió)
+    'SE': '2800308',  # Sergipe (Aracaju)
+    'BA': '2927408',  # Bahia (Salvador)
+    'MG': '3106200',  # Minas Gerais (Belo Horizonte)
+    'ES': '3205309',  # Espírito Santo (Vitória)
+    'RJ': '3304557',  # Rio de Janeiro (Rio de Janeiro)
+    'SP': '3550308',  # São Paulo (São Paulo) <-- Ponto de Partida
+    'PR': '4106902',  # Paraná (Curitiba)
+    'SC': '4205407',  # Santa Catarina (Florianópolis)
+    'RS': '4314902',  # Rio Grande do Sul (Porto Alegre)
+    'MS': '5002704',  # Mato Grosso do Sul (Campo Grande)
+    'MT': '5103403',  # Mato Grosso (Cuiabá)
+    'GO': '5208707',  # Goiás (Goiânia)
+    'DF': '5300108'   # Distrito Federal (Brasília)
+}
+
+# Define a ORDEM DE BUSCA: Começa por SP, depois segue a ordem do dicionário.
+ORDEM_DE_BUSCA = ['SP'] + [uf for uf in CODIGOS_MUNICIPIOS_CAPITAIS.keys() if uf != 'SP']
+
+
+# Tipos de vaga para iterar
+TIPOS_VAGA = ["ESTAGIO", "APRENDIZ", "PCD", "PP", "SE"]
+
+# Filtro de palavras-chave rigoroso para TI/Tecnologia
+PALAVRAS_CHAVE_TI = [
+    'tecnologia', 'ti', 'informática', 'sistemas', 'devops', 
+    'desenvolvedor', 'programador', 'python', 'java', 'sql', 
+    'cloud', 'aws', 'azure', 'dados', 'data science', 'rede', 
+    'cibersegurança', 'engenhariadesoftware', 'ciencia da computacao',
+    'analista de sistemas', 'suporte tecnico', 'web designer', 'infraestrutura'
+]
+
+# URLs das APIs do CIEE (mantidas)
+URL_API_CIEE_VAGAS = "https://api.ciee.org.br/vagas/vitrine-vaga/publicadas" 
+URL_API_CIEE_EDITAIS_PP = 'https://api-pp.ciee.org.br/api/editais/vitrine'
+URL_API_CIEE_EDITAIS_SE = 'https://api-solucoes-especiais.ciee.org.br/api/editais/vitrine' 
+
+MAX_PAGE_SIZE = 300 
+
+# --- 2. FUNÇÃO DE BUSCA E PAGINAÇÃO (MANTIDA) ---
+
+def buscar_vagas_cidade(codigo_municipio, uf_sigla):
+    """
+    Função que itera sobre todos os tipos de vaga para UM município.
+    """
+    vagas_totais = []
+    
+    for tipo_vaga in TIPOS_VAGA:
+        
+        # 2.1. Configuração da requisição (usa a lógica GET/POST)
+        if tipo_vaga in ["ESTAGIO", "APRENDIZ", "PCD"]:
+            url_api = URL_API_CIEE_VAGAS
+            method = 'GET'
+            headers = {}
+            data_body = {'codigoMunicipio': codigo_municipio, 'tipoVaga': tipo_vaga}
+        
+        elif tipo_vaga == "PP":
+            url_api = URL_API_CIEE_EDITAIS_PP
+            method = 'POST'
+            headers = {'Content-Type': 'application/json'}
+            data_body = {"listMunicipiosIds": [int(codigo_municipio)], "tipoVaga": tipo_vaga}
+
+        elif tipo_vaga == "SE":
+            url_api = URL_API_CIEE_EDITAIS_SE
+            method = 'POST'
+            headers = {'Content-Type': 'application/json'}
+            data_body = {"listMunicipiosIds": [int(codigo_municipio)], "tipoVaga": tipo_vaga}
+        
+        else:
+            continue
+
+        pagina_atual = 0
+        total_de_paginas = 1 
+        
+        # print(f"  > Tipo: {tipo_vaga}")
+
+        while pagina_atual < total_de_paginas:
+            time.sleep(random.uniform(2, 5)) # Atraso para evitar bloqueios
+            
+            params = {'page': pagina_atual, 'size': MAX_PAGE_SIZE, 'sort': 'codigoVaga,desc'}
+            
+            if method == 'GET':
+                params.update(data_body)
+                json_data = None
+            elif method == 'POST':
+                json_data = json.dumps(data_body)
+            
+            try:
+                if method == 'GET':
+                    response = requests.get(url_api, params=params, headers=headers)
+                elif method == 'POST':
+                    response = requests.post(url_api, params=params, data=json_data, headers=headers)
+                
+                response.raise_for_status() 
+                data = response.json()
+                vagas_content = data.get('content', [])
+                total_de_paginas = data.get('totalPages', 0)
+                
+                for vaga in vagas_content:
+                    vaga['UF_Coleta'] = uf_sigla
+                    vaga['Municipio_Coleta'] = [k for k, v in CODIGOS_MUNICIPIOS_CAPITAIS.items() if v == codigo_municipio][0] if codigo_municipio in CODIGOS_MUNICIPIOS_CAPITAIS.values() else 'Não Mapeado'
+                    vagas_totais.append(vaga)
+                
+                pagina_atual += 1
+                
+            except Exception as e:
+                # print(f"    [ERRO DE REQUISIÇÃO] Falha na busca por {tipo_vaga} em {uf_sigla}: {e}")
+                break
+                
+    return pd.DataFrame(vagas_totais)
+
+# --- 3. FUNÇÃO DE PROCESSAMENTO E FILTRAGEM DE TI (MANTIDA) ---
+
+def filtrar_vagas_ti(df_vagas):
+    """Filtra o DataFrame usando palavras-chave de TI em todas as colunas de texto relevantes."""
+    if df_vagas.empty:
+        return df_vagas
+
+    COLUNAS_TEXTO_PARA_FILTRO = [
+        'areaProfissional', 'areaAtuacao', 'descricao', 
+        'titulo', 'nome', 'identificacao', 
+        'textoEdital' 
+    ]
+    
+    df_vagas_limpo = df_vagas.fillna('')
+
+    colunas_existentes_para_combinacao = [col for col in COLUNAS_TEXTO_PARA_FILTRO if col in df_vagas_limpo.columns]
+
+    combined_text = df_vagas_limpo.apply(
+        lambda row: ' '.join([row[col] for col in colunas_existentes_para_combinacao]), 
+        axis=1
+    )
+    
+    regex_ti = '|'.join(map(re.escape, PALAVRAS_CHAVE_TI))
+    mask_ti = combined_text.str.contains(regex_ti, case=False, regex=True)
+    
+    return df_vagas[mask_ti]
+
+# --- 4. EXECUÇÃO DO PROJETO (NOVA ORDEM DE BUSCA) ---
+
+def executar_coleta_nacional_ordenada(mapa_municipios, ordem_uf):
+    """Executa a coleta em todos os estados na ordem definida (começando por SP)."""
+    df_nacional = pd.DataFrame()
+    
+    for uf_sigla in ordem_uf:
+        codigo_municipio = mapa_municipios.get(uf_sigla)
+        if not codigo_municipio:
+            print(f"[AVISO] Código do município não encontrado para {uf_sigla}. Pulando.")
+            continue
+            
+        print(f"\n=========================================================================")
+        print(f"  INICIANDO BUSCA EM: {uf_sigla} (Tipo de Vagas: {', '.join(TIPOS_VAGA)})")
+        print(f"=========================================================================")
+        
+        # Coleta todas as vagas para a UF/Cidade atual
+        df_cidade_bruto = buscar_vagas_cidade(codigo_municipio, uf_sigla)
+        
+        if df_cidade_bruto.empty:
+            print(f"[RESULTADO] Nenhuma vaga encontrada em {uf_sigla} (Bruto).")
+            continue
+            
+        # Filtra apenas as vagas de TI/Tecnologia (Ação Principal)
+        df_cidade_ti = filtrar_vagas_ti(df_cidade_bruto)
+        
+        if df_cidade_ti.empty:
+            print(f"[RESULTADO] Nenhuma vaga de TI/Tecnologia encontrada em {uf_sigla}.")
+            continue
+
+        # Adiciona os resultados filtrados ao DataFrame nacional
+        df_nacional = pd.concat([df_nacional, df_cidade_ti], ignore_index=True)
+
+        print(f"[SUCESSO] {len(df_cidade_ti)} vagas de TI/Tecnologia encontradas em {uf_sigla}.")
+        print(f"  > Total acumulado de vagas de TI: {len(df_nacional)}")
+
+        # Exibe a listagem das vagas encontradas no estado atual
+        COLUNAS_EXIBICAO = ['UF_Coleta', 'tipoVaga', 'nomeEmpresa', 'areaProfissional', 'descricao']
+        print("\n--- AMOSTRA DAS VAGAS DE TI ENCONTRADAS NESTE ESTADO ---")
+        print(df_cidade_ti[COLUNAS_EXIBICAO].head().to_markdown(index=False))
+
+    return df_nacional
+
+# --- EXECUÇÃO FINAL ---
+
+print("INICIANDO COLETA ORDENADA DE VAGAS DE TI EM TODO O BRASIL (CIEE)")
+df_vagas_ti_nacional = executar_coleta_nacional_ordenada(CODIGOS_MUNICIPIOS_CAPITAIS, ORDEM_DE_BUSCA)
+
+if not df_vagas_ti_nacional.empty:
+    print("\n=========================================================================")
+    print(f"✅ COLETA NACIONAL CONCLUÍDA! TOTAL DE VAGAS DE TI: {len(df_vagas_ti_nacional)}")
+    print("=========================================================================")
+    
+    # Próximo passo: Salvar o resultado para a próxima fase (Transformação de Dados)
+    # df_vagas_ti_nacional.to_parquet('vagas_ti_nacional_final.parquet', index=False)

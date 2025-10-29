@@ -1,0 +1,89 @@
+Saldo Líquido de Vagas de TI por Faixa Etária 
+
+
+
+# -*- coding: utf-8 -*-
+import pandas as pd
+import matplotlib.pyplot as plt
+import glob
+import os
+
+# 🗂️ 1️⃣ Carregar todos os arquivos .parquet de janeiro a julho de 2025
+arquivos = sorted(glob.glob('/content/CAGED/caged_ti_brasil_2025*.parquet'))
+df_list = []
+
+for caminho in arquivos:
+    print(f"Lendo: {os.path.basename(caminho)}")
+    df_temp = pd.read_parquet(caminho)
+
+    # Corrigir possíveis problemas de encoding
+    df_temp.columns = [col.encode('latin1').decode('utf-8') if 'Ã' in col or '§' in col else col for col in df_temp.columns]
+
+    df_list.append(df_temp)
+
+# Concatenar todos os DataFrames
+df = pd.concat(df_list, ignore_index=True)
+
+# 🧹 2️⃣ Limpeza e conversões
+df['saldomovimentacao'] = pd.to_numeric(df['saldomovimentacao'], errors='coerce')
+df['idade'] = pd.to_numeric(df['idade'], errors='coerce')
+
+# 📊 3️⃣ Filtro estratégico de CBO (famílias de TI)
+familias_ti = ['1425', '2122', '2123', '2124', '3171']
+df_ti = df[df['cbo2002ocupacao'].astype(str).str.startswith(tuple(familias_ti))].copy()
+
+# 🧠 4️⃣ Criação das faixas etárias
+def faixa_etaria(idade):
+    if 18 <= idade <= 25:
+        return '18-25 (Júnior / Entrada)'
+    elif 26 <= idade <= 35:
+        return '26-35 (Pleno / Crescimento)'
+    elif 36 <= idade <= 50:
+        return '36-50 (Sênior / Experiência)'
+    elif idade >= 51:
+        return '51+ (Liderança / Executivo)'
+    else:
+        return 'Indefinido'
+
+df_ti['faixa_etaria'] = df_ti['idade'].apply(faixa_etaria)
+
+# 🧮 5️⃣ Calcular o saldo líquido (Admissões - Desligamentos)
+saldo_faixa = (
+    df_ti.groupby('faixa_etaria')['saldomovimentacao']
+    .sum()
+    .reindex(['18-25 (Júnior / Entrada)',
+              '26-35 (Pleno / Crescimento)',
+              '36-50 (Sênior / Experiência)',
+              '51+ (Liderança / Executivo)'])
+)
+
+# 🎨 6️⃣ Configuração de cores por faixa (gradiente + negativo)
+cores = []
+for valor in saldo_faixa:
+    if valor < 0:
+        cores.append('red')
+    else:
+        cores.append('#4A90E2')  # Azul padrão
+
+# 🔢 7️⃣ Plotar gráfico
+plt.figure(figsize=(10, 6))
+barras = plt.bar(saldo_faixa.index, saldo_faixa.values, color=cores, edgecolor='black')
+
+# Linha de base no zero
+plt.axhline(0, color='black', linewidth=1)
+
+# Rótulos de valor no topo
+for barra, valor in zip(barras, saldo_faixa.values):
+    plt.text(barra.get_x() + barra.get_width() / 2, valor,
+             f'{valor:,.0f}', ha='center',
+             va='bottom' if valor >= 0 else 'top', fontsize=10, fontweight='bold')
+
+# 🎯 8️⃣ Título e eixos
+plt.title('Saldo Líquido de Vagas de TI por Faixa Etária (Admissões - Desligamentos)', fontsize=13, fontweight='bold')
+plt.ylabel('Saldo Líquido de Vagas')
+plt.xlabel('Faixa Etária')
+plt.xticks(rotation=20, ha='right')
+plt.grid(axis='y', linestyle='--', alpha=0.6)
+plt.tight_layout()
+
+plt.show()

@@ -1,0 +1,43 @@
+Top 10 Cargos de Desligamentos de Ti (de Janeiro a Julho)
+
+import matplotlib.pyplot as plt
+
+# Dados Top 10 de Desligamentos
+ocupacoes = [
+    "Analista de Desenvolvimento de Sistemas",
+    "Técnico de Laboratório de Informática",
+    "Analista de Suporte Computacional",
+    "Analista de Redes e de Comunicação de Dados",
+    "Gerente de Projetos de TI",
+    "Analista de Negócios (TI)",
+    "Engenheiro de Sistemas Operacionais",
+    "Administrador de Redes",
+    "Gerente de Desenvolvimento de Sistemas",
+    "Administrador de Banco de Dados"
+]
+
+desligamentos = [28285, 13352, 11895, 3055, 2999, 1807, 1605, 1474, 1055, 1055]
+
+# Ordenar do maior para o menor
+dados_ordenados = sorted(zip(desligamentos, ocupacoes), reverse=True)
+desligamentos_ord, ocupacoes_ord = zip(*dados_ordenados)
+
+# Cores: Top 1 em vermelho, demais em cinza
+cores = ['#D62728'] + ['#A9A9A9'] * (len(ocupacoes_ord) - 1)
+
+# Criar gráfico horizontal
+plt.figure(figsize=(12,6))
+bars = plt.barh(ocupacoes_ord[::-1], desligamentos_ord[::-1], color=cores[::-1])
+
+# Inserir valores no final das barras
+for bar in bars:
+    width = bar.get_width()
+    plt.text(width + 200, bar.get_y() + bar.get_height()/2, f'{width:,}', va='center', ha='left')
+
+# Estilo minimalista
+plt.gca().invert_yaxis()  # Top 1 no topo
+plt.xticks([])
+plt.grid(False)
+plt.title("Top 10 Ocupações de TI por Desligamentos (Janeiro a Julho)", fontsize=14)
+plt.tight_layout()
+plt.show()

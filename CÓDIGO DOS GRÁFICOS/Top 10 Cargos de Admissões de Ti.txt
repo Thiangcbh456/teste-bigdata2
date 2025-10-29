@@ -1,0 +1,44 @@
+Top 10 Cargos de Admissões de Ti (de Janeiro a Julho)
+
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Dados do Top 10 de Ocupações de TI (Admissões)
+dados = {
+    "Ocupacao": [
+        "Analista de Desenvolvimento de Sistemas",
+        "Técnico de Laboratório de Informática",
+        "Analista de Suporte Computacional",
+        "Gerente de Projetos de TI",
+        "Analista de Redes e de Comunicação de Dados",
+        "Analista de Negócios",
+        "Administrador de Redes",
+        "Engenheiro de Sistemas Operacionais em Computação",
+        "Gerente de Desenvolvimento de Sistemas",
+        "Administrador de Banco de Dados"
+    ],
+    "Total_Admissoes": [7190, 3598, 3493, 1085, 839, 541, 387, 340, 268, 261]
+}
+
+df_ti = pd.DataFrame(dados)
+
+# Ordenar para o gráfico ficar do menor para o maior
+df_ti = df_ti.sort_values(by="Total_Admissoes")
+
+# Configuração do gráfico
+plt.figure(figsize=(10,6))
+bars = plt.barh(df_ti["Ocupacao"], df_ti["Total_Admissoes"], color="#2ca02c")  # cor verde minimalista
+
+# Título e labels
+plt.title("Top 10 Ocupações de TI por Total de Admissões (Janeiro a Julho)", fontsize=14)
+plt.xlabel("Total de Admissões")
+plt.ylabel("Ocupações de TI")
+
+# Adicionar os valores dentro das barras
+for bar in bars:
+    width = bar.get_width()
+    plt.text(width + 50, bar.get_y() + bar.get_height()/2,
+             f'{int(width)}', va='center', fontsize=9)
+
+plt.tight_layout()
+plt.show()

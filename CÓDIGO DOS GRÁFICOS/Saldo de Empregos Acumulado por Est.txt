@@ -1,0 +1,93 @@
+Saldo de Empregos Acumulado por Estado
+
+
+
+import pandas as pd
+import glob
+import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
+import numpy as np
+
+# =========================
+# 0) CONFIGURAÇÃO DE CAMINHOS
+# =========================
+PASTA_CAGED = "/content/CAGED/"
+ARQUIVOS_PARQUET = glob.glob(f"{PASTA_CAGED}caged_ti_brasil_2025*.parquet")
+
+if not ARQUIVOS_PARQUET:
+    raise FileNotFoundError(f"Nenhum arquivo .parquet encontrado em {PASTA_CAGED}")
+
+# =========================
+# 1) CARREGAR DADOS
+# =========================
+dfs = [pd.read_parquet(f) for f in ARQUIVOS_PARQUET]
+df = pd.concat(dfs, ignore_index=True)
+
+# Converter mês para datetime
+df['mes'] = pd.to_datetime(df['mes_competencia'].astype(str), format='%Y%m', errors='coerce')
+df = df.dropna(subset=['mes'])
+
+# Criar colunas de Admissão e Desligamento
+df['Admissão'] = (df['saldomovimentacao'] == 1).astype(int)
+df['Desligamento'] = (df['saldomovimentacao'] == -1).astype(int)
+
+# =========================
+# 2) TRADUZIR CÓDIGOS DE UF PARA NOMES
+# =========================
+uf_map = {
+    11: 'Rondônia', 12: 'Acre', 13: 'Amazonas', 14: 'Roraima', 15: 'Pará',
+    16: 'Amapá', 17: 'Tocantins', 21: 'Maranhão', 22: 'Piauí', 23: 'Ceará',
+    24: 'Rio Grande do Norte', 25: 'Paraíba', 26: 'Pernambuco', 27: 'Alagoas',
+    28: 'Sergipe', 29: 'Bahia', 31: 'Minas Gerais', 32: 'Espírito Santo',
+    33: 'Rio de Janeiro', 35: 'São Paulo', 41: 'Paraná', 42: 'Santa Catarina',
+    43: 'Rio Grande do Sul', 50: 'Mato Grosso do Sul', 51: 'Mato Grosso',
+    52: 'Goiás', 53: 'Distrito Federal'
+}
+df['uf_nome'] = df['uf'].map(uf_map)
+
+# Mapear Regiões
+regiao_map = {
+    'Rondônia':'Norte', 'Acre':'Norte', 'Amazonas':'Norte', 'Roraima':'Norte', 'Pará':'Norte',
+    'Amapá':'Norte', 'Tocantins':'Norte',
+    'Maranhão':'Nordeste', 'Piauí':'Nordeste', 'Ceará':'Nordeste', 'Rio Grande do Norte':'Nordeste',
+    'Paraíba':'Nordeste', 'Pernambuco':'Nordeste', 'Alagoas':'Nordeste', 'Sergipe':'Nordeste', 'Bahia':'Nordeste',
+    'Minas Gerais':'Sudeste', 'Espírito Santo':'Sudeste', 'Rio de Janeiro':'Sudeste', 'São Paulo':'Sudeste',
+    'Paraná':'Sul', 'Santa Catarina':'Sul', 'Rio Grande do Sul':'Sul',
+    'Mato Grosso do Sul':'Centro-Oeste', 'Mato Grosso':'Centro-Oeste', 'Goiás':'Centro-Oeste', 'Distrito Federal':'Centro-Oeste'
+}
+df['Regiao'] = df['uf_nome'].map(regiao_map)
+
+# =========================
+# 3) CALCULAR SALDO ACUMULADO POR ESTADO
+# =========================
+df_estado = df.groupby(['Regiao','uf_nome'])[['Admissão','Desligamento']].sum()
+df_estado['Saldo'] = df_estado['Admissão'] - df_estado['Desligamento']
+df_estado = df_estado.sort_values(['Regiao','Saldo'], ascending=[True, False])
+
+# =========================
+# 4) PLOTAR GRÁFICO DE BARRAS
+# =========================
+plt.figure(figsize=(14,7))
+colors = ['#2E7D32' if x>0 else '#C62828' for x in df_estado['Saldo']]
+bars = plt.bar(df_estado.index.get_level_values('uf_nome'), df_estado['Saldo'], color=colors)
+
+plt.xticks(rotation=45, ha='right')
+plt.ylabel('Saldo de Empregos Líquido')
+plt.title('Saldo de Empregos Acumulado por Estado (Janeiro a Julho 2025)')
+
+# Adicionar valores sobre as barras
+for bar in bars:
+    yval = bar.get_height()
+    plt.text(bar.get_x() + bar.get_width()/2, yval + max(df_estado['Saldo'])*0.01, f"{int(yval):,}".replace(',','.'), 
+             ha='center', va='bottom', fontsize=9)
+
+# Separar visualmente por região com linhas verticais
+regioes = df_estado.reset_index()['Regiao']
+ultima = 0
+for reg in regioes.unique():
+    indices = df_estado.reset_index()[df_estado.reset_index()['Regiao']==reg].index
+    plt.axvline(x=indices[-1]+0.5, color='gray', linestyle='--', alpha=0.5)
+    ultima = indices[-1]
+
+plt.tight_layout()
+plt.show()

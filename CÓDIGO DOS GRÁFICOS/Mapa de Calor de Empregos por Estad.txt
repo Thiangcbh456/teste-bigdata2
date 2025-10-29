@@ -1,0 +1,81 @@
+Mapa de Calor de Empregos por Estado
+
+import pandas as pd
+import glob
+import geopandas as gpd
+import matplotlib.pyplot as plt
+from matplotlib.colors import TwoSlopeNorm
+import matplotlib as mpl
+
+# =========================
+# 0) CONFIGURAÇÃO DE CAMINHOS E CARREGAMENTO
+# =========================
+PASTA_CAGED = "/content/CAGED/"
+ARQUIVOS_PARQUET = glob.glob(f"{PASTA_CAGED}caged_ti_brasil_2025*.parquet")
+
+dfs = [pd.read_parquet(f) for f in ARQUIVOS_PARQUET]
+df = pd.concat(dfs, ignore_index=True)
+
+# Converter mês para datetime
+df['mes'] = pd.to_datetime(df['mes_competencia'].astype(str), format='%Y%m', errors='coerce')
+df = df.dropna(subset=['mes'])
+
+# Colunas de Admissão e Desligamento
+df['Admissão'] = (df['saldomovimentacao'] == 1).astype(int)
+df['Desligamento'] = (df['saldomovimentacao'] == -1).astype(int)
+
+# Tradução de UF para Nome do Estado
+uf_map = {
+    11: 'Rondônia', 12: 'Acre', 13: 'Amazonas', 14: 'Roraima', 15: 'Pará',
+    16: 'Amapá', 17: 'Tocantins', 21: 'Maranhão', 22: 'Piauí', 23: 'Ceará',
+    24: 'Rio Grande do Norte', 25: 'Paraíba', 26: 'Pernambuco', 27: 'Alagoas',
+    28: 'Sergipe', 29: 'Bahia', 31: 'Minas Gerais', 32: 'Espírito Santo',
+    33: 'Rio de Janeiro', 35: 'São Paulo', 41: 'Paraná', 42: 'Santa Catarina',
+    43: 'Rio Grande do Sul', 50: 'Mato Grosso do Sul', 51: 'Mato Grosso',
+    52: 'Goiás', 53: 'Distrito Federal'
+}
+df['uf_nome'] = df['uf'].map(uf_map)
+
+# =========================
+# 1) CALCULAR SALDO ACUMULADO POR ESTADO
+# =========================
+df_saldo = df.groupby('uf_nome')[['Admissão', 'Desligamento']].sum()
+df_saldo['Saldo'] = df_saldo['Admissão'] - df_saldo['Desligamento']
+df_saldo.reset_index(inplace=True)
+
+# =========================
+# 2) CARREGAR SHAPEFILE DO BRASIL
+# =========================
+url_shapefile = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson"
+br_states = gpd.read_file(url_shapefile)
+
+# Normalizar nomes
+br_states['name'] = br_states['name'].str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8')
+df_saldo['uf_nome'] = df_saldo['uf_nome'].str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8')
+
+# Merge shapefile com dados
+br_states = br_states.merge(df_saldo, how='left', left_on='name', right_on='uf_nome')
+
+# =========================
+# 3) PLOTAR MAPA COROPLÉTICO COM LEGENDA CLARA
+# =========================
+plt.figure(figsize=(12,10))
+
+vmin = br_states['Saldo'].min()
+vmax = br_states['Saldo'].max()
+norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+# Plotando o mapa
+ax = br_states.plot(column='Saldo', cmap='RdYlGn', linewidth=0.8, edgecolor='0.8', legend=False, norm=norm)
+
+# Criar barra de cores com legenda
+sm = plt.cm.ScalarMappable(cmap='RdYlGn', norm=norm)
+sm.set_array([])
+cbar = plt.colorbar(sm, ax=ax, fraction=0.03, pad=0.04)
+cbar.set_label('Saldo de Empregos (Admissões - Desligamentos)', fontsize=12)
+cbar.set_ticks([vmin, 0, vmax])
+cbar.set_ticklabels([f'Perda Máxima\n({int(vmin):,})', 'Neutro (0)', f'Ganho Máximo\n({int(vmax):,})'])
+
+plt.title('Saldo Acumulado de Empregos por Estado (Janeiro a Julho 2025)', fontsize=16)
+plt.axis('off')
+plt.show()

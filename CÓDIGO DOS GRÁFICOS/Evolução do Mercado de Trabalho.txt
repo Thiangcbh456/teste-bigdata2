@@ -1,0 +1,89 @@
+Evolução do Mercado de Trabalho
+
+
+
+
+import pandas as pd
+import glob
+import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
+
+# =========================
+# 0) CONFIGURAÇÃO DE CAMINHOS
+# =========================
+PASTA_CAGED = "/content/CAGED/"
+ARQUIVOS_PARQUET = glob.glob(f"{PASTA_CAGED}caged_ti_brasil_2025*.parquet")
+
+if not ARQUIVOS_PARQUET:
+    raise FileNotFoundError(f"Nenhum arquivo .parquet encontrado em {PASTA_CAGED}")
+
+# =========================
+# 1) CARREGAR DADOS
+# =========================
+dfs = [pd.read_parquet(f) for f in ARQUIVOS_PARQUET]
+df = pd.concat(dfs, ignore_index=True)
+
+# Converter mês para datetime
+df['mes'] = pd.to_datetime(df['mes_competencia'].astype(str), format='%Y%m', errors='coerce')
+df = df.dropna(subset=['mes'])
+
+# Criar colunas de Admissão e Desligamento
+df['Admissão'] = (df['saldomovimentacao'] == 1).astype(int)
+df['Desligamento'] = (df['saldomovimentacao'] == -1).astype(int)
+
+# =========================
+# 2) TRADUZIR CÓDIGOS DE UF PARA NOMES
+# =========================
+uf_map = {
+    11: 'Rondônia', 12: 'Acre', 13: 'Amazonas', 14: 'Roraima', 15: 'Pará',
+    16: 'Amapá', 17: 'Tocantins', 21: 'Maranhão', 22: 'Piauí', 23: 'Ceará',
+    24: 'Rio Grande do Norte', 25: 'Paraíba', 26: 'Pernambuco', 27: 'Alagoas',
+    28: 'Sergipe', 29: 'Bahia', 31: 'Minas Gerais', 32: 'Espírito Santo',
+    33: 'Rio de Janeiro', 35: 'São Paulo', 41: 'Paraná', 42: 'Santa Catarina',
+    43: 'Rio Grande do Sul', 50: 'Mato Grosso do Sul', 51: 'Mato Grosso',
+    52: 'Goiás', 53: 'Distrito Federal'
+}
+df['uf_nome'] = df['uf'].map(uf_map)
+
+# =========================
+# 3) AGREGAR DADOS POR MÊS (NACIONAL)
+# =========================
+df_mes = df.groupby('mes')[['Admissão', 'Desligamento']].sum().sort_index()
+df_mes['Saldo'] = df_mes['Admissão'] - df_mes['Desligamento']
+
+# =========================
+# 4) FUNÇÃO DE FORMATAÇÃO BR
+# =========================
+def fmt_br(x, pos=None):
+    try:
+        return f"{int(x):,}".replace(',', '.')
+    except:
+        return str(x)
+
+# =========================
+# 5) PLOTAR GRÁFICO DE LINHA MÚLTIPLA
+# =========================
+plt.figure(figsize=(12,6))
+plt.plot(df_mes.index, df_mes['Admissão'], marker='o', label='Total de Admissões', color='#2E7D32')
+plt.plot(df_mes.index, df_mes['Desligamento'], marker='o', label='Total de Desligamentos', color='#C62828')
+plt.plot(df_mes.index, df_mes['Saldo'], marker='o', label='Saldo de Empregos', color='#1E88E5')
+
+# Configurações de eixo
+plt.xticks(df_mes.index, [d.strftime('%b/%Y') for d in df_mes.index])
+plt.ylabel('Quantidade')
+plt.title('Evolução do Mercado de Trabalho (Nacional) - Janeiro a Julho 2025')
+plt.grid(True, linestyle='--', alpha=0.4)
+plt.legend()
+plt.gca().yaxis.set_major_formatter(FuncFormatter(fmt_br))
+
+# Valores sobre os pontos
+for i, row in df_mes.iterrows():
+    plt.text(i, row['Admissão'] + df_mes['Admissão'].max()*0.01, fmt_br(row['Admissão']),
+             ha='center', va='bottom', fontsize=9, color='#2E7D32')
+    plt.text(i, row['Desligamento'] + df_mes['Desligamento'].max()*0.01, fmt_br(row['Desligamento']),
+             ha='center', va='bottom', fontsize=9, color='#C62828')
+    plt.text(i, row['Saldo'] + df_mes['Saldo'].max()*0.01, fmt_br(row['Saldo']),
+             ha='center', va='bottom', fontsize=9, color='#1E88E5')
+
+plt.tight_layout()
+plt.show()
